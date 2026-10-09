@@ -1,0 +1,4 @@
+# arquivos brutos do TSE (grandes demais para o git — baixe de dadosabertos.tse.jus.br)
+data/bweb_*.csv
+data/locais_tse/
+.vercel

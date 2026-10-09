@@ -1,0 +1,4 @@
+data/
+cmd/
+go.mod
+Makefile

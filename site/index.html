@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapa das Urnas</title>
+<meta name="description" content="Abstenção por bairro, local de votação e seção em Livramento de Nossa Senhora (BA) — dados oficiais do TSE.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --border: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --hover: rgba(42,120,214,0.07);
+  --track: #f0efec;
+  /* sequencial (azul) para % de abstenção */
+  --s1: #9ec5f4; --s2: #6da7ec; --s3: #3987e5; --s4: #256abf; --s5: #104281;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+    --accent: #3987e5; --hover: rgba(57,135,229,0.12); --track: #2c2c2a;
+    --s1: #184f95; --s2: #256abf; --s3: #3987e5; --s4: #6da7ec; --s5: #b7d3f6;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+  --muted: #898781; --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+  --accent: #3987e5; --hover: rgba(57,135,229,0.12); --track: #2c2c2a;
+  --s1: #184f95; --s2: #256abf; --s3: #3987e5; --s4: #6da7ec; --s5: #b7d3f6;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+header h1 { font-size: 28px; line-height: 1.2; margin: 0 0 4px; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--ink-2); }
+.top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+#theme {
+  background: var(--surface); color: var(--ink-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
+.tile { padding: 16px; }
+.tile .k { color: var(--ink-2); font-size: 13px; }
+.tile .v { font-size: 28px; font-weight: 600; line-height: 1.2; margin-top: 4px; }
+.tile .s { color: var(--muted); font-size: 13px; margin-top: 2px; }
+h2 { font-size: 18px; margin: 32px 0 4px; }
+.lead { color: var(--ink-2); margin: 0 0 12px; font-size: 14px; }
+#map { height: 460px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
+#map.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) grayscale(0.4); }
+#map:not(.dark) .leaflet-tile-pane { filter: grayscale(0.5) brightness(1.03); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-top: 10px; color: var(--ink-2); font-size: 13px; }
+.legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--grid); margin: 32px 0 12px; }
+.tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent; color: var(--ink-2);
+  font: inherit; font-weight: 500; padding: 8px 12px; cursor: pointer; margin-bottom: -1px;
+}
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.tools input, .tools select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px;
+}
+.tools input { flex: 1 1 220px; min-width: 0; }
+.tools .count { color: var(--muted); font-size: 13px; }
+.chip {
+  display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2);
+  background: var(--hover); border-radius: 999px; padding: 3px 4px 3px 10px;
+}
+.chip button { background: none; border: 0; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 6px; }
+.tablebox { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface); }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+th .arr { color: var(--muted); font-size: 10px; margin-left: 4px; }
+tbody tr:hover { background: var(--hover); }
+tbody tr.click { cursor: pointer; }
+td .sub { color: var(--muted); font-size: 12px; }
+.bar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; min-width: 140px; }
+.bar .t { flex: 1; max-width: 90px; height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.bar .f { height: 100%; border-radius: 0 4px 4px 0; }
+.tag { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; color: var(--ink-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+footer { margin-top: 40px; color: var(--muted); font-size: 13px; }
+footer a { color: var(--ink-2); }
+.leaflet-tooltip { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+@media (max-width: 760px) {
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile { padding: 12px; }
+  .tile .s { font-size: 12px; }
+  td:first-child { min-width: 180px; }
+  th, td { padding: 8px 10px; }
+  .tile .v { font-size: 22px; }
+  #map { height: 360px; }
+  header h1 { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Abstenção em <span id="mun">…</span></h1>
+      <p id="eleicao"></p>
+    </div>
+    <button id="theme" type="button" aria-label="Alternar tema">◐ Tema</button>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <h2>Mapa dos locais de votação</h2>
+  <p class="lead">Cada círculo é um local de votação. O tamanho indica quantos eleitores faltaram e a cor indica a porcentagem de abstenção. Clique em um local para ver as seções dele.</p>
+  <div id="map" role="img" aria-label="Mapa dos locais de votação com abstenção"></div>
+  <div class="legend" id="legend"></div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="bairros" aria-selected="true">Bairros e povoados</button>
+    <button role="tab" data-tab="locais" aria-selected="false">Locais de votação</button>
+    <button role="tab" data-tab="secoes" aria-selected="false">Seções</button>
+  </nav>
+  <div class="tools">
+    <input id="q" type="search" placeholder="Buscar por bairro, local ou seção…" aria-label="Buscar">
+    <select id="area" aria-label="Área">
+      <option value="">Urbana e rural</option>
+      <option value="URBANA">Só zona urbana</option>
+      <option value="RURAL">Só zona rural</option>
+    </select>
+    <span id="filter"></span>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="card tablebox"><table id="table"><thead></thead><tbody></tbody></table></div>
+
+  <footer>
+    Fonte: TSE — Boletins de Urna (bweb) e cadastro de locais de votação (eleitorado_local_votacao 2026).
+    Abstenção = aptos − comparecimento, por seção. Gerado em <span id="gerado"></span>.
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const fmt = new Intl.NumberFormat('pt-BR');
+const pctFmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const title = s => String(s).toLowerCase().replace(/(^|[\s(/-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase())
+  .replace(/\b(De|Da|Do|Dos|Das|E)\b/g, w => w.toLowerCase());
+
+// faixas de % de abstenção → passos da rampa sequencial
+const BINS = [10, 14, 17, 20];
+const binOf = p => BINS.findIndex(b => p < b) === -1 ? 4 : BINS.findIndex(b => p < b);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const colorOf = p => css('--s' + (binOf(p) + 1));
+const BIN_LABELS = ['abaixo de 10%', '10–14%', '14–17%', '17–20%', '20% ou mais'];
+
+let D, map, markers = [], state = { tab: 'bairros', q: '', area: '', bairro: '', local: '', sort: null };
+
+const COLS = {
+  bairros: [
+    { k: 'NM_BAIRRO', h: 'Bairro / povoado', r: b => `${esc(title(b.NM_BAIRRO))}<div class="sub">${esc(b.LOCAIS.split(' | ').map(title).join(' · '))}</div>` },
+    { k: 'AREA', h: 'Área', r: b => `<span class="tag">${b.AREA}</span>` },
+    { k: 'QT_LOCAIS', h: 'Locais', n: 1 },
+    { k: 'QT_SECOES', h: 'Seções', n: 1 },
+    { k: 'QT_APTOS', h: 'Aptos', n: 1 },
+    { k: 'QT_COMPARECIMENTO', h: 'Compareceram', n: 1 },
+    { k: 'QT_ABSTENCOES', h: 'Abstenções', n: 1 },
+    { k: 'PCT_ABSTENCAO', h: '% abstenção', n: 1, r: b => bar(b.PCT_ABSTENCAO) },
+    { k: 'PCT_DO_TOTAL_ABSTENCOES', h: '% do total', n: 1, r: b => pctFmt(b.PCT_DO_TOTAL_ABSTENCOES) },
+  ],
+  locais: [
+    { k: 'NR_LOCAL_VOTACAO', h: 'Nº', n: 1, r: l => l.NR_LOCAL_VOTACAO },
+    { k: 'NM_LOCAL_VOTACAO', h: 'Local de votação', r: l => `${esc(title(l.NM_LOCAL_VOTACAO))}<div class="sub">${esc(title(l.DS_ENDERECO))}</div>` },
+    { k: 'NM_BAIRRO', h: 'Bairro / povoado', r: l => esc(title(l.NM_BAIRRO)) },
+    { k: 'QT_SECOES', h: 'Seções', n: 1, r: l => `${l.QT_SECOES}<div class="sub">${esc(l.SECOES)}</div>` },
+    { k: 'QT_APTOS', h: 'Aptos', n: 1 },
+    { k: 'QT_ABSTENCOES', h: 'Abstenções', n: 1 },
+    { k: 'PCT_ABSTENCAO', h: '% abstenção', n: 1, r: l => bar(l.PCT_ABSTENCAO) },
+  ],
+  secoes: [
+    { k: 'NR_SECAO', h: 'Seção', n: 1, r: s => s.NR_SECAO + (s.DS_SECOES_AGREGADAS && s.DS_SECOES_AGREGADAS !== '#NULO#' ? `<div class="sub">agrega ${esc(s.DS_SECOES_AGREGADAS)}</div>` : '') },
+    { k: 'NM_LOCAL_VOTACAO', h: 'Local de votação', r: s => `${esc(title(s.NM_LOCAL_VOTACAO))}<div class="sub">nº ${s.NR_LOCAL_VOTACAO}</div>` },
+    { k: 'NM_BAIRRO', h: 'Bairro / povoado', r: s => esc(title(s.NM_BAIRRO)) },
+    { k: 'QT_APTOS', h: 'Aptos', n: 1 },
+    { k: 'QT_COMPARECIMENTO', h: 'Compareceram', n: 1 },
+    { k: 'QT_ABSTENCOES', h: 'Abstenções', n: 1 },
+    { k: 'PCT_ABSTENCAO', h: '% abstenção', n: 1, r: s => bar(s.PCT_ABSTENCAO) },
+    { k: 'BRANCOS_PRESIDENTE', h: 'Brancos (pres.)', n: 1 },
+    { k: 'NULOS_PRESIDENTE', h: 'Nulos (pres.)', n: 1 },
+  ],
+};
+const DEFAULT_SORT = { k: 'QT_ABSTENCOES', dir: -1 };
+
+function bar(p) {
+  const w = Math.min(100, p / 25 * 100);
+  return `<div class="bar"><span class="t"><span class="f" style="display:block;width:${w}%;background:${colorOf(p)}"></span></span>${pctFmt(p)}</div>`;
+}
+
+function sum(rows, k) { return rows.reduce((a, r) => a + r[k], 0); }
+
+function renderTiles() {
+  const s = D.secoes, apt = sum(s, 'QT_APTOS'), comp = sum(s, 'QT_COMPARECIMENTO'), abs = sum(s, 'QT_ABSTENCOES');
+  const by = a => { const r = D.locais.filter(l => l.AREA === a); return { apt: sum(r, 'QT_APTOS'), abs: sum(r, 'QT_ABSTENCOES') }; };
+  const u = by('URBANA'), r = by('RURAL');
+  const tiles = [
+    ['Eleitores aptos', fmt.format(apt), `${D.secoes.length} seções em ${D.locais.length} locais`],
+    ['Compareceram', fmt.format(comp), pctFmt(comp / apt * 100) + ' dos aptos'],
+    ['Abstenções', fmt.format(abs), pctFmt(abs / apt * 100) + ' dos aptos'],
+    ['Urbana × rural', `${pctFmt(u.abs / u.apt * 100)} × ${pctFmt(r.abs / r.apt * 100)}`, `abstenção · ${fmt.format(u.abs)} × ${fmt.format(r.abs)} eleitores`],
+  ];
+  document.getElementById('tiles').innerHTML = tiles.map(([k, v, s]) =>
+    `<div class="card tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+}
+
+let tileLayer;
+function tileURL() {
+  const dark = document.documentElement.dataset.theme === 'dark' ||
+    (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.getElementById('map').classList.toggle('dark', dark);
+  return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+}
+
+function renderMap() {
+  if (!map) {
+    map = L.map('map', { scrollWheelZoom: false });
+    tileLayer = L.tileLayer(tileURL(), {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(map);
+  } else {
+    tileLayer.setUrl(tileURL());
+    markers.forEach(m => m.remove());
+    markers = [];
+  }
+  const max = Math.max(...D.locais.map(l => l.QT_ABSTENCOES));
+  const pts = [];
+  // maiores primeiro, para os pequenos ficarem por cima
+  [...D.locais].sort((a, b) => b.QT_ABSTENCOES - a.QT_ABSTENCOES).forEach(l => {
+    if (!l.LATITUDE || !l.LONGITUDE || l.LATITUDE === -1) return;
+    const ll = [l.LATITUDE, l.LONGITUDE];
+    pts.push(ll);
+    const m = L.circleMarker(ll, {
+      radius: 5 + 17 * Math.sqrt(l.QT_ABSTENCOES / max),
+      color: css('--surface'), weight: 2, fillColor: colorOf(l.PCT_ABSTENCAO), fillOpacity: 0.9,
+    }).addTo(map);
+    m.bindTooltip(`<b>${esc(title(l.NM_LOCAL_VOTACAO))}</b><br>${esc(title(l.NM_BAIRRO))} · ${l.AREA.toLowerCase()}<br>
+      ${fmt.format(l.QT_ABSTENCOES)} abstenções de ${fmt.format(l.QT_APTOS)} aptos (<b>${pctFmt(l.PCT_ABSTENCAO)}</b>)<br>
+      Seções: ${esc(l.SECOES)}`, { direction: 'top', offset: [0, -6] });
+    m.on('click', () => { state.local = l.NR_LOCAL_VOTACAO; state.bairro = ''; setTab('secoes'); document.querySelector('.tabs').scrollIntoView({ behavior: 'smooth' }); });
+    markers.push(m);
+  });
+  if (!map._loaded || !map.__fitted) { map.fitBounds(pts, { padding: [24, 24] }); map.__fitted = true; }
+
+  document.getElementById('legend').innerHTML = '<span>% de abstenção:</span>' +
+    BIN_LABELS.map((t, i) => `<span><span class="sw" style="background:${css('--s' + (i + 1))}"></span>${t}</span>`).join('') +
+    '<span>· tamanho = nº de abstenções</span>';
+}
+
+function setTab(tab) {
+  state.tab = tab; state.sort = null;
+  document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
+  renderTable();
+}
+
+function renderTable() {
+  const cols = COLS[state.tab];
+  let rows = D[state.tab];
+  if (state.area) rows = rows.filter(r => r.AREA === state.area);
+  if (state.bairro) rows = rows.filter(r => r.NM_BAIRRO === state.bairro);
+  if (state.local && state.tab !== 'bairros') rows = rows.filter(r => r.NR_LOCAL_VOTACAO === state.local);
+  if (state.q) {
+    const q = state.q.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+    rows = rows.filter(r => Object.values(r).join(' ').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().includes(q));
+  }
+  const s = state.sort || DEFAULT_SORT;
+  rows = [...rows].sort((a, b) => {
+    const x = a[s.k], y = b[s.k];
+    return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR')) * s.dir;
+  });
+
+  const t = document.getElementById('table');
+  t.tHead.innerHTML = '<tr>' + cols.map(c =>
+    `<th class="${c.n ? 'num' : ''}" data-k="${c.k}" aria-sort="${s.k === c.k ? (s.dir > 0 ? 'ascending' : 'descending') : 'none'}">${c.h}<span class="arr">${s.k === c.k ? (s.dir > 0 ? '▲' : '▼') : ''}</span></th>`).join('') + '</tr>';
+  t.tBodies[0].innerHTML = rows.map((r, i) =>
+    `<tr data-i="${i}" class="${state.tab !== 'secoes' ? 'click' : ''}">` + cols.map(c =>
+      `<td class="${c.n ? 'num' : ''}">${c.r ? c.r(r) : (c.n ? fmt.format(r[c.k]) : esc(r[c.k]))}</td>`).join('') + '</tr>').join('');
+  t._rows = rows;
+
+  // total da visão atual
+  const label = { bairros: 'bairros/povoados', locais: 'locais', secoes: 'seções' }[state.tab];
+  const apt = sum(rows, 'QT_APTOS'), abs = sum(rows, 'QT_ABSTENCOES');
+  document.getElementById('count').textContent =
+    `${rows.length} ${label} · ${fmt.format(abs)} abstenções de ${fmt.format(apt)} aptos${apt ? ' (' + pctFmt(abs / apt * 100) + ')' : ''}`;
+
+  const f = [];
+  if (state.bairro) f.push(['bairro', title(state.bairro)]);
+  if (state.local && state.tab !== 'bairros') {
+    const l = D.locais.find(l => l.NR_LOCAL_VOTACAO === state.local);
+    f.push(['local', title(l ? l.NM_LOCAL_VOTACAO : state.local)]);
+  }
+  document.getElementById('filter').innerHTML = f.map(([k, v]) =>
+    `<span class="chip">${esc(v)}<button data-clear="${k}" aria-label="Remover filtro">×</button></span>`).join(' ');
+}
+
+function wire() {
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+  document.getElementById('q').oninput = e => { state.q = e.target.value.trim(); renderTable(); };
+  document.getElementById('area').onchange = e => { state.area = e.target.value; renderTable(); };
+  document.getElementById('filter').onclick = e => {
+    const k = e.target.dataset.clear; if (!k) return;
+    state[k] = ''; renderTable();
+  };
+  const t = document.getElementById('table');
+  t.tHead.onclick = e => {
+    const th = e.target.closest('th'); if (!th) return;
+    const k = th.dataset.k, cur = state.sort || DEFAULT_SORT;
+    const numeric = COLS[state.tab].find(c => c.k === k).n;
+    state.sort = { k, dir: cur.k === k ? -cur.dir : (numeric ? -1 : 1) };
+    renderTable();
+  };
+  t.tBodies[0].onclick = e => {
+    const tr = e.target.closest('tr'); if (!tr) return;
+    const r = t._rows[+tr.dataset.i];
+    if (state.tab === 'bairros') { state.bairro = r.NM_BAIRRO; state.local = ''; setTab('locais'); }
+    else if (state.tab === 'locais') { state.local = r.NR_LOCAL_VOTACAO; setTab('secoes'); }
+  };
+  document.getElementById('theme').onclick = () => {
+    const root = document.documentElement;
+    const dark = root.dataset.theme === 'dark' || (!root.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+    root.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
+    renderMap(); renderTable();
+  };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { renderMap(); renderTable(); });
+}
+
+(async () => {
+  try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  D = await (await fetch('data.json')).json();
+  document.getElementById('mun').textContent = D.municipio;
+  document.getElementById('eleicao').textContent = D.eleicao;
+  document.getElementById('gerado').textContent = D.gerado_em;
+  // seções herdam a área do local
+  const area = Object.fromEntries(D.locais.map(l => [l.NR_LOCAL_VOTACAO, l.AREA]));
+  D.secoes.forEach(s => s.AREA = s.AREA || area[s.NR_LOCAL_VOTACAO]);
+  renderTiles(); renderMap(); wire(); renderTable();
+})();
+</script>
+</body>
+</html>
