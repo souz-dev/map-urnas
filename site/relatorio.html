@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatório de Abstenção</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* página de impressão: sempre tema claro */
+:root {
+  color-scheme: light;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781; --grid: #e1e0d9;
+  --border: rgba(11,11,11,0.12); --accent: #2a78d6; --track: #f0efec; --surface: #fcfcfb;
+  --s1: #9ec5f4; --s2: #6da7ec; --s3: #3987e5; --s4: #256abf; --s5: #104281;
+}
+@page { size: A4; margin: 14mm 12mm 16mm; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #fff; color: var(--ink); font: 10.5pt/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { max-width: 186mm; margin: 0 auto; }
+h1 { font-size: 21pt; line-height: 1.15; margin: 0 0 2pt; letter-spacing: -0.01em; }
+.sub { color: var(--ink-2); margin: 0; }
+h2 { font-size: 13pt; margin: 18pt 0 4pt; break-after: avoid; }
+.lead { color: var(--ink-2); margin: 0 0 8pt; font-size: 9.5pt; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6pt; margin: 14pt 0 4pt; }
+.tile { border: 1px solid var(--border); border-radius: 8pt; padding: 8pt 10pt; background: var(--surface); }
+.tile .k { color: var(--ink-2); font-size: 8.5pt; }
+.tile .v { font-size: 16pt; font-weight: 600; line-height: 1.2; margin-top: 2pt; }
+.tile .s { color: var(--muted); font-size: 8pt; }
+.points { margin: 0; padding-left: 14pt; }
+.points li { margin: 3pt 0; }
+#map { height: 92mm; border: 1px solid var(--border); border-radius: 8pt; }
+.leaflet-control-zoom { display: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 3pt 12pt; margin-top: 5pt; color: var(--ink-2); font-size: 8.5pt; }
+.legend .sw { display: inline-block; width: 9pt; height: 9pt; border-radius: 50%; margin-right: 4pt; vertical-align: -1pt; }
+table { width: 100%; border-collapse: collapse; font-size: 8.8pt; }
+th, td { padding: 3pt 6pt; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-size: 7.8pt; font-weight: 600; color: var(--ink-2); border-bottom-color: #c3c2b7; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .d { color: var(--muted); font-size: 7.6pt; }
+.bar { display: inline-flex; align-items: center; gap: 5pt; justify-content: flex-end; }
+.bar .t { width: 34pt; height: 6pt; background: var(--track); border-radius: 3pt; overflow: hidden; display: inline-block; }
+.bar .f { display: block; height: 100%; border-radius: 0 3pt 3pt 0; }
+.tag { font-size: 6.8pt; font-weight: 600; letter-spacing: 0.03em; color: var(--ink-2); border: 1px solid var(--border); border-radius: 3pt; padding: 0 4pt; }
+.break { break-before: page; }
+.cols { columns: 2; column-gap: 10pt; }
+.cols table { break-inside: auto; }
+footer { margin-top: 14pt; color: var(--muted); font-size: 8pt; }
+@media screen { body { padding: 24px 16px; background: #f9f9f7; } .page { background: #fff; padding: 24px; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Abstenção em <span id="mun">…</span></h1>
+  <p class="sub" id="eleicao"></p>
+
+  <section class="tiles" id="tiles"></section>
+
+  <h2>Destaques</h2>
+  <ul class="points" id="points"></ul>
+
+  <h2>Mapa dos locais de votação</h2>
+  <p class="lead">Tamanho do círculo = número de abstenções · cor = % de abstenção do local.</p>
+  <div id="map"></div>
+  <div class="legend" id="legend"></div>
+
+  <h2 class="break">Abstenção por bairro e povoado</h2>
+  <p class="lead">Ordenado pelo número de abstenções.</p>
+  <table id="t-bairros"></table>
+
+  <h2 class="break">Abstenção por local de votação</h2>
+  <p class="lead">Ordenado pelo número de abstenções.</p>
+  <table id="t-locais"></table>
+
+  <h2 class="break">Todas as seções</h2>
+  <p class="lead">Ordenado por local e número da seção.</p>
+  <div class="cols"><table id="t-secoes"></table></div>
+
+  <footer>
+    Fonte: TSE — Boletins de Urna (bweb) e cadastro de locais de votação 2026. Abstenção = aptos − comparecimento, por seção.
+    Gerado em <span id="gerado"></span>. <span id="link"></span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const fmt = new Intl.NumberFormat('pt-BR');
+const pctFmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const title = s => String(s).toLowerCase().replace(/(^|[\s(/-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase())
+  .replace(/\b(De|Da|Do|Dos|Das|E)\b/g, w => w.toLowerCase());
+const BINS = [10, 14, 17, 20];
+const binOf = p => { const i = BINS.findIndex(b => p < b); return i === -1 ? 4 : i; };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const colorOf = p => css('--s' + (binOf(p) + 1));
+const BIN_LABELS = ['abaixo de 10%', '10–14%', '14–17%', '17–20%', '20% ou mais'];
+const sum = (rows, k) => rows.reduce((a, r) => a + r[k], 0);
+const bar = p => `<span class="bar"><span class="t"><span class="f" style="width:${Math.min(100, p / 25 * 100)}%;background:${colorOf(p)}"></span></span>${pctFmt(p)}</span>`;
+
+function table(id, cols, rows) {
+  document.getElementById(id).innerHTML =
+    '<thead><tr>' + cols.map(c => `<th class="${c.n ? 'num' : ''}">${c.h}</th>`).join('') + '</tr></thead><tbody>' +
+    rows.map(r => '<tr>' + cols.map(c => `<td class="${c.n ? 'num' : ''}">${c.r ? c.r(r) : (c.n ? fmt.format(r[c.k]) : esc(r[c.k]))}</td>`).join('') + '</tr>').join('') +
+    '</tbody>';
+}
+
+(async () => {
+  const D = await (await fetch('data.json')).json();
+  document.getElementById('mun').textContent = D.municipio;
+  document.getElementById('eleicao').textContent = D.eleicao;
+  document.getElementById('gerado').textContent = D.gerado_em;
+  if (location.protocol.startsWith('http') && location.hostname !== 'localhost')
+    document.getElementById('link').textContent = 'Versão interativa: ' + location.origin;
+
+  const S = D.secoes, apt = sum(S, 'QT_APTOS'), comp = sum(S, 'QT_COMPARECIMENTO'), abs = sum(S, 'QT_ABSTENCOES');
+  const by = a => { const r = D.locais.filter(l => l.AREA === a); return { apt: sum(r, 'QT_APTOS'), abs: sum(r, 'QT_ABSTENCOES') }; };
+  const u = by('URBANA'), ru = by('RURAL');
+  document.getElementById('tiles').innerHTML = [
+    ['Eleitores aptos', fmt.format(apt), `${S.length} seções · ${D.locais.length} locais`],
+    ['Compareceram', fmt.format(comp), pctFmt(comp / apt * 100) + ' dos aptos'],
+    ['Abstenções', fmt.format(abs), pctFmt(abs / apt * 100) + ' dos aptos'],
+    ['Urbana × rural', `${pctFmt(u.abs / u.apt * 100)} × ${pctFmt(ru.abs / ru.apt * 100)}`, 'taxa de abstenção'],
+  ].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+
+  // destaques calculados a partir dos dados
+  const B = [...D.bairros].sort((a, b) => b.QT_ABSTENCOES - a.QT_ABSTENCOES);
+  const byPct = [...D.bairros].sort((a, b) => b.PCT_ABSTENCAO - a.PCT_ABSTENCAO);
+  const lowPct = [...byPct].reverse();
+  const L0 = [...D.locais].sort((a, b) => b.QT_ABSTENCOES - a.QT_ABSTENCOES)[0];
+  const list = arr => arr.map(b => `${esc(title(b.NM_BAIRRO))} (${pctFmt(b.PCT_ABSTENCAO)})`).join(', ');
+  document.getElementById('points').innerHTML = [
+    `<b>${fmt.format(abs)} eleitores</b> deixaram de votar, ou seja ${pctFmt(abs / apt * 100)} dos ${fmt.format(apt)} aptos.`,
+    `A zona urbana se absteve mais: <b>${pctFmt(u.abs / u.apt * 100)}</b>, contra ${pctFmt(ru.abs / ru.apt * 100)} na zona rural. A cidade soma ${fmt.format(u.abs)} abstenções (${pctFmt(u.abs / abs * 100)} do total).`,
+    `<b>${esc(title(B[0].NM_BAIRRO))}</b> concentra ${fmt.format(B[0].QT_ABSTENCOES)} abstenções, ${pctFmt(B[0].PCT_DO_TOTAL_ABSTENCOES)} de todo o município.`,
+    `Maiores taxas: ${list(byPct.slice(0, 3))}.`,
+    `Menores taxas: ${list(lowPct.slice(0, 3))}.`,
+    `O local com mais abstenções é <b>${esc(title(L0.NM_LOCAL_VOTACAO))}</b> (${esc(title(L0.NM_BAIRRO))}): ${fmt.format(L0.QT_ABSTENCOES)} de ${fmt.format(L0.QT_APTOS)} aptos.`,
+  ].map(t => `<li>${t}</li>`).join('');
+
+  // mapa estático
+  const map = L.map('map', { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, attributionControl: true });
+  const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' }).addTo(map);
+  const max = Math.max(...D.locais.map(l => l.QT_ABSTENCOES)), pts = [];
+  [...D.locais].sort((a, b) => b.QT_ABSTENCOES - a.QT_ABSTENCOES).forEach(l => {
+    if (!l.LATITUDE || l.LATITUDE === -1) return;
+    pts.push([l.LATITUDE, l.LONGITUDE]);
+    L.circleMarker([l.LATITUDE, l.LONGITUDE], { radius: 4 + 14 * Math.sqrt(l.QT_ABSTENCOES / max),
+      color: '#fff', weight: 1.5, fillColor: colorOf(l.PCT_ABSTENCAO), fillOpacity: 0.92 }).addTo(map);
+  });
+  map.fitBounds(pts, { padding: [14, 14] });
+  document.getElementById('legend').innerHTML = '<span>% de abstenção:</span>' +
+    BIN_LABELS.map((t, i) => `<span><span class="sw" style="background:${css('--s' + (i + 1))}"></span>${t}</span>`).join('');
+
+  table('t-bairros', [
+    { h: 'Bairro / povoado', r: b => `${esc(title(b.NM_BAIRRO))} <span class="tag">${b.AREA}</span>` },
+    { h: 'Locais', n: 1, k: 'QT_LOCAIS' }, { h: 'Seções', n: 1, k: 'QT_SECOES' },
+    { h: 'Aptos', n: 1, k: 'QT_APTOS' }, { h: 'Compar.', n: 1, k: 'QT_COMPARECIMENTO' },
+    { h: 'Abstenções', n: 1, k: 'QT_ABSTENCOES' },
+    { h: '% abstenção', n: 1, r: b => bar(b.PCT_ABSTENCAO) },
+    { h: '% do total', n: 1, r: b => pctFmt(b.PCT_DO_TOTAL_ABSTENCOES) },
+  ], B);
+
+  table('t-locais', [
+    { h: 'Local de votação', r: l => `${esc(title(l.NM_LOCAL_VOTACAO))}<div class="d">nº ${l.NR_LOCAL_VOTACAO} · ${esc(title(l.NM_BAIRRO))} · seções ${esc(l.SECOES)}</div>` },
+    { h: 'Aptos', n: 1, k: 'QT_APTOS' }, { h: 'Abstenções', n: 1, k: 'QT_ABSTENCOES' },
+    { h: '% abstenção', n: 1, r: l => bar(l.PCT_ABSTENCAO) },
+  ], [...D.locais].sort((a, b) => b.QT_ABSTENCOES - a.QT_ABSTENCOES));
+
+  table('t-secoes', [
+    { h: 'Seção', n: 1, k: 'NR_SECAO', r: s => s.NR_SECAO },
+    { h: 'Local', r: s => `<span class="d" style="font-size:7.4pt;color:inherit">${s.NR_LOCAL_VOTACAO} · ${esc(title(s.NM_BAIRRO))}</span>` },
+    { h: 'Aptos', n: 1, k: 'QT_APTOS' }, { h: 'Abst.', n: 1, k: 'QT_ABSTENCOES' },
+    { h: '%', n: 1, r: s => pctFmt(s.PCT_ABSTENCAO) },
+  ], D.secoes);
+
+  // sinaliza para o gerador de PDF que os tiles carregaram
+  tiles.on('load', () => document.body.dataset.ready = '1');
+})();
+</script>
+</body>
+</html>
